@@ -39,14 +39,19 @@ async def read_dht(name, pin_number):
         await asyncio.sleep_ms(2000)
 
 
-async def update_display(sensor_config):
+async def update_display(display_config, sensor_config):
     global sensors
     i2c = machine.I2C(
-        scl=machine.Pin(5),
-        sda=machine.Pin(4),
+        scl=machine.Pin(display_config['pin']['scl']),
+        sda=machine.Pin(display_config['pin']['sda']),
         freq=400000
     )
-    lcd = i2c_lcd.I2cLcd(i2c, 0x3F, 2, 16)
+    lcd = i2c_lcd.I2cLcd(
+        i2c,
+        display_config['address'],
+        display_config['dimensions']['height'],
+        display_config['dimensions']['width']
+    )
 
     while True:
         print(sensors)
@@ -102,14 +107,20 @@ def main():
                 )
             )
 
-    loop.create_task(update_display(config['sensors'].items()))
+    if 'display' in config:
+        loop.create_task(
+            update_display(
+                config['display'],
+                config['sensors'].items()
+            )
+        )
 
-    if 'http' in config:
+    if 'httpd' in config:
         loop.call_soon(
             asyncio.start_server(
                 handle_request,
-                config['http'].get('listen_address', '0.0.0.0'),
-                config['http'].get('port', 8080),
+                config['httpd'].get('listen_address', '0.0.0.0'),
+                config['httpd'].get('port', 8080),
                 backlog=100
             )
         )

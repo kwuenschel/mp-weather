@@ -11,8 +11,19 @@
             "format": "{temp:2.2f}C  {rel:3}%rel."
         }
     },
-    "http": {
+    "display": {
+        "pin": {
+            "scl": 5,
+            "sda": 4
+        },
+        "address": 63,
+        "dimensions": {
+            "width": 16,
+            "height": 2,
+        }
+    },
+    "httpd": {
         "listen_address": "0.0.0.0",
         "port": 8080,
-    }
+    },
 }
