@@ -1,0 +1,18 @@
+{
+    "sensors": {
+        "ds18x20": {
+            "pin": 2,
+            "type": "ds18x20",
+            "format": "{temp:2.2f}C  "
+        },
+        "dht11": {
+            "pin": 0,
+            "type": "dht11",
+            "format": "{temp:2.2f}C  {rel:3}%rel."
+        }
+    },
+    "http": {
+        "listen_address": "0.0.0.0",
+        "port": 8080,
+    }
+}

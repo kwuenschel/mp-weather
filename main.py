@@ -10,7 +10,7 @@ import ujson
 sensors = dict()
 
 
-async def read_temperature(pin_number):
+async def read_ds18x20(name, pin_number):
     global sensors
     pin = machine.Pin(pin_number)
     sensor = ds18x20.DS18X20(onewire.OneWire(pin))
@@ -20,33 +20,26 @@ async def read_temperature(pin_number):
     while True:
         sensor.convert_temp()
         await asyncio.sleep_ms(750)
-        sensors['ds18x20'] = dict(
+        sensors[name] = dict(
             temp=sensor.read_temp(rom)
         )
 
 
-async def read_dht(pin_number):
+async def read_dht(name, pin_number):
     global sensors
     pin = machine.Pin(pin_number)
     sensor = dht.DHT11(pin)
 
     while True:
         sensor.measure()
-        sensors['dht'] = dict(
+        sensors[name] = dict(
             rel=sensor.humidity(),
             temp=float(sensor.temperature())
         )
         await asyncio.sleep_ms(2000)
 
 
-def format_value(value):
-    if isinstance(value, float):
-        return "{:.2f}".format(value)
-    else:
-        return str(value)
-
-
-async def update_display():
+async def update_display(sensor_config):
     global sensors
     i2c = machine.I2C(
         scl=machine.Pin(5),
@@ -58,16 +51,10 @@ async def update_display():
     while True:
         print(sensors)
         texts = []
-        for values in sensors.values():
-            for sensor, value in values.items():
-                if sensor == 'temp':
-                    unit = 'C'
-                elif sensor == 'rel':
-                    unit = '%rel'
-                else:
-                    unit = ''
-
-                texts.append("{:8}".format(format_value(value) + unit))
+        for name, config in sensor_config:
+            values = sensors.get(name)
+            if values:
+                texts.append(config['format'].format(**values))
 
         lcd.move_to(0, 0)
         lcd.putstr("".join(texts))
@@ -93,20 +80,39 @@ async def handle_request(reader, writer):
     yield from writer.aclose()
 
 
+def read_config():
+    with open('config.json') as f:
+        return ujson.loads(f.read())
+
+
 def main():
+    config = read_config()
+
     loop = asyncio.get_event_loop()
 
-    loop.create_task(read_dht(0))
-    loop.create_task(read_temperature(2))
-    loop.create_task(update_display())
-    loop.call_soon(
-        asyncio.start_server(
-            handle_request,
-            '0.0.0.0',
-            8080,
-            backlog=100
+    for name, sensor_config in config['sensors'].items():
+        if sensor_config['type'] == 'dht11':
+            loop.create_task(read_dht(name, sensor_config['pin']))
+        elif sensor_config['type'] == 'ds18x20':
+            loop.create_task(read_ds18x20(name, sensor_config['pin']))
+        else:
+            print(
+                'Configuration error: Unknown sensor {}'.format(
+                    sensor_config['type']
+                )
+            )
+
+    loop.create_task(update_display(config['sensors'].items()))
+
+    if 'http' in config:
+        loop.call_soon(
+            asyncio.start_server(
+                handle_request,
+                config['http'].get('listen_address', '0.0.0.0'),
+                config['http'].get('port', 8080),
+                backlog=100
+            )
         )
-    )
     loop.run_forever()
 
 
