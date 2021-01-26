@@ -1,6 +1,6 @@
 import dht
 import ds18x20
-import esp8266_i2c_lcd as i2c_lcd
+import framebuf
 import machine
 import onewire
 
@@ -39,19 +39,8 @@ async def read_dht(name, pin_number):
         await asyncio.sleep_ms(2000)
 
 
-async def update_display(display_config, sensor_config):
+async def update_display(display, sensor_config):
     global sensors
-    i2c = machine.I2C(
-        scl=machine.Pin(display_config['pin']['scl']),
-        sda=machine.Pin(display_config['pin']['sda']),
-        freq=400000
-    )
-    lcd = i2c_lcd.I2cLcd(
-        i2c,
-        display_config['address'],
-        display_config['dimensions']['height'],
-        display_config['dimensions']['width']
-    )
 
     while True:
         print(sensors)
@@ -61,8 +50,8 @@ async def update_display(display_config, sensor_config):
             if values:
                 texts.append(config['format'].format(**values))
 
-        lcd.move_to(0, 0)
-        lcd.putstr("".join(texts))
+        text = "".join(texts)
+        display.show_text(text)
         await asyncio.sleep_ms(2000)
 
 
@@ -108,9 +97,29 @@ def main():
             )
 
     if 'display' in config:
+        display_config = config['display']
+        display_type = display_config.pop('type', 'i2lcd')
+        if display_type == 'i2lcd':
+            display = I2CLCD(
+                scl=display_config['pin']['scl'],
+                sda=display_config['pin']['sda'],
+                address=display_config['address'],
+                width=display_config['dimensions']['width'],
+                height=display_config['dimensions']['height'],
+            )
+        elif display_type == 'ssd1306':
+            display = SSD1306(
+                scl=display_config['pin']['scl'],
+                sda=display_config['pin']['sda'],
+                width=display_config['dimensions']['width'],
+                height=display_config['dimensions']['height'],
+            )
+        else:
+            raise ValueError("Unknown display type {}".format(display_type))
+
         loop.create_task(
             update_display(
-                config['display'],
+                display,
                 config['sensors'].items()
             )
         )
@@ -121,10 +130,54 @@ def main():
                 handle_request,
                 config['httpd'].get('listen_address', '0.0.0.0'),
                 config['httpd'].get('port', 8080),
-                backlog=100
+                backlog=100,
             )
         )
     loop.run_forever()
+
+
+class SSD1306:
+    def __init__(self, scl, sda, width, height):
+        import ssd1306
+        self.i2c = machine.I2C(
+            scl=machine.Pin(scl),
+            sda=machine.Pin(sda),
+            freq=100000,
+        )
+        self.display = ssd1306.SSD1306_I2C(
+            width,
+            height,
+            self.i2c,
+        )
+        self.chars_per_line = width // 8
+
+    def show_text(self, text):
+        self.display.fill(0)
+        line_count = len(text) // self.chars_per_line + 1
+        for line in range(line_count):
+            self.display.text(text[line*self.chars_per_line:(line+1)*self.chars_per_line], 0, line * 8)
+
+        self.display.show()
+
+
+class I2CLCD:
+    def __init__(self, scl, sda, address, width, height):
+        import esp8266_i2c_lcd as i2c_lcd
+        self.i2c = machine.I2C(
+            scl=machine.Pin(scl),
+            sda=machine.Pin(sda),
+            freq=400000,
+        )
+        self.lcd = i2c_lcd.I2cLcd(
+            self.i2c,
+            address,
+            height,
+            width,
+        )
+
+    def show_text(text):
+        self.lcd.move_to(0, 0)
+        self.lcd.putstr(text)
 
 
 if __name__ == '__main__':
